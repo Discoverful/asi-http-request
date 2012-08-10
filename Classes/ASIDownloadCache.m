@@ -129,7 +129,7 @@ static NSArray *fileExtensionsToHandleAsHTML = nil;
 
 	// We only cache 200/OK or redirect reponses (redirect responses are cached so the cache works better with no internet connection)
 	int responseCode = [request responseStatusCode];
-	if (responseCode != 200 && responseCode != 301 && responseCode != 302 && responseCode != 303 && responseCode != 307) {
+	if (responseCode != 200 && responseCode != 301 && responseCode != 302 && responseCode != 303 && responseCode != 304 && responseCode != 307) {
 		[[self accessLock] unlock];
 		return;
 	}
@@ -142,7 +142,12 @@ static NSArray *fileExtensionsToHandleAsHTML = nil;
 	NSString *headerPath = [self pathToStoreCachedResponseHeadersForRequest:request];
 	NSString *dataPath = [self pathToStoreCachedResponseDataForRequest:request];
 
-	NSMutableDictionary *responseHeaders = [NSMutableDictionary dictionaryWithDictionary:[request responseHeaders]];
+	NSMutableDictionary *responseHeaders = [[[NSMutableDictionary alloc] init] autorelease];
+	if (responseCode == 304) {
+		// If response code is 304, merge response headers. S3 does not return Cache-Control and a few other headers on 304.
+		[responseHeaders addEntriesFromDictionary:[self cachedResponseHeadersForURL:request.url]];
+	}
+	[responseHeaders addEntriesFromDictionary:[request responseHeaders]];
 	if ([request isResponseCompressed]) {
 		[responseHeaders removeObjectForKey:@"Content-Encoding"];
 	}
@@ -151,32 +156,28 @@ static NSArray *fileExtensionsToHandleAsHTML = nil;
 	// This is what we use for deciding if cached data is current, rather than parsing the expires / max-age headers individually each time
 	// We store this as a timestamp to make reading it easier as NSDateFormatter is quite expensive
 
-	NSDate *expires = [self expiryDateForRequest:request maxAge:maxAge];
+	NSDate *expires = [ASIHTTPRequest expiryDateForResponseHeaders:responseHeaders maxAge:maxAge];
 	if (expires) {
 		[responseHeaders setObject:[NSNumber numberWithDouble:[expires timeIntervalSince1970]] forKey:@"X-ASIHTTPRequest-Expires"];
 	}
 
 	// Store the response code in a custom header so we can reuse it later
-
-	// We'll change 304/Not Modified to 200/OK because this is likely to be us updating the cached headers with a conditional GET
-	int statusCode = [request responseStatusCode];
-	if (statusCode == 304) {
-		statusCode = 200;
-	}
-	[responseHeaders setObject:[NSNumber numberWithInt:statusCode] forKey:@"X-ASIHTTPRequest-Response-Status-Code"];
+	[responseHeaders setObject:[NSNumber numberWithInt:responseCode] forKey:@"X-ASIHTTPRequest-Response-Status-Code"];
 
 	[responseHeaders writeToFile:headerPath atomically:NO];
 
-	if ([request responseData]) {
-		[[request responseData] writeToFile:dataPath atomically:NO];
-	} else if ([request downloadDestinationPath] && ![[request downloadDestinationPath] isEqualToString:dataPath]) {        
-		NSError *error = nil;
-        NSFileManager* manager = [[NSFileManager alloc] init];
-        if ([manager fileExistsAtPath:dataPath]) {
-            [manager removeItemAtPath:dataPath error:&error];
-        }
-        [manager copyItemAtPath:[request downloadDestinationPath] toPath:dataPath error:&error];
-        [manager release];
+	if (responseCode != 304) {
+		if ([request responseData]) {
+			[[request responseData] writeToFile:dataPath atomically:NO];
+		} else if ([request downloadDestinationPath] && ![[request downloadDestinationPath] isEqualToString:dataPath]) {
+			NSError *error = nil;
+			NSFileManager* manager = [[NSFileManager alloc] init];
+			if ([manager fileExistsAtPath:dataPath]) {
+				[manager removeItemAtPath:dataPath error:&error];
+			}
+			[manager copyItemAtPath:[request downloadDestinationPath] toPath:dataPath error:&error];
+			[manager release];
+		}
 	}
 	[[self accessLock] unlock];
 }

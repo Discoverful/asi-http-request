@@ -4844,7 +4844,11 @@ static NSOperationQueue *sharedQueue = nil;
 + (NSDate *)expiryDateForRequest:(ASIHTTPRequest *)request maxAge:(NSTimeInterval)maxAge
 {
 	NSDictionary *responseHeaders = [request responseHeaders];
-  
+	return [ASIHTTPRequest expiryDateForResponseHeaders:responseHeaders maxAge:maxAge];
+}
+
++ (NSDate *)expiryDateForResponseHeaders:(NSDictionary *)responseHeaders maxAge:(NSTimeInterval)maxAge
+{
 	// If we weren't given a custom max-age, lets look for one in the response headers
 	if (!maxAge) {
 		NSString *cacheControl = [[responseHeaders objectForKey:@"Cache-Control"] lowercaseString];

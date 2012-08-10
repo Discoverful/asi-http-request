@@ -878,6 +878,8 @@ typedef void (^ASIDataBlock)(NSData *data);
 // there exists a non-zero max-age property in the Cache-Control response header.
 + (NSDate *)expiryDateForRequest:(ASIHTTPRequest *)request maxAge:(NSTimeInterval)maxAge;
 
++ (NSDate *)expiryDateForResponseHeaders:(NSDictionary *)responseHeaders maxAge:(NSTimeInterval)maxAge;
+
 // Returns a date from a string in RFC1123 format
 + (NSDate *)dateFromRFC1123String:(NSString *)string;
 
